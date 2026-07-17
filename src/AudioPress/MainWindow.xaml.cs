@@ -13,23 +13,25 @@ public partial class MainWindow : Window
         DataContext = new MainWindowViewModel(new WindowsDialogService());
     }
 
-    private async void Window_Drop(object sender, DragEventArgs e)
+    private async void Window_Drop(object sender, System.Windows.DragEventArgs e)
     {
         if (DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }
 
-        if (e.Data.GetDataPresent(DataFormats.FileDrop)
-            && e.Data.GetData(DataFormats.FileDrop) is string[] paths)
+        if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)
+            && e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths)
         {
             await viewModel.AddDroppedPathsAsync(paths).ConfigureAwait(true);
         }
     }
 
-    private void Window_DragOver(object sender, DragEventArgs e)
+    private void Window_DragOver(object sender, System.Windows.DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)
+            ? System.Windows.DragDropEffects.Copy
+            : System.Windows.DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -57,4 +59,3 @@ public partial class MainWindow : Window
         }
     }
 }
-
