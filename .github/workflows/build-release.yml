@@ -1,0 +1,80 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows portable build
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore AudioPress.sln
+
+      - name: Build
+        run: dotnet build AudioPress.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/AudioPress.Core.Tests/AudioPress.Core.Tests.csproj --configuration Release --no-build
+
+      - name: Prepare FFmpeg
+        shell: pwsh
+        run: ./scripts/prepare-ffmpeg.ps1
+
+      - name: Run real compression smoke test
+        shell: pwsh
+        run: dotnet run --project tools/AudioPress.Smoke/AudioPress.Smoke.csproj --configuration Release -- ./artifacts/smoke
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: |
+          $version = "0.1.0-ci"
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+            $version = $env:GITHUB_REF_NAME.Substring(1)
+          }
+          ./scripts/package-windows.ps1 -Version $version
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AudioPress-win-x64-portable
+          path: |
+            artifacts/*.zip
+            artifacts/SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notesFile = "packaging/RELEASE_NOTES_v0.1.0.md"
+          if (!(Test-Path $notesFile)) {
+            "AudioPress Windows 绿色版。解压后运行 AudioPress.exe。" | Set-Content -Path release-notes.md -Encoding UTF8
+            $notesFile = "release-notes.md"
+          }
+          gh release create $env:GITHUB_REF_NAME `
+            artifacts/*.zip `
+            artifacts/SHA256SUMS.txt `
+            --title "AudioPress 音频批量压缩器 $env:GITHUB_REF_NAME" `
+            --notes-file $notesFile
