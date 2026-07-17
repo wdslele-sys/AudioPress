@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows.Input;
 using AudioPress.Commands;
 using AudioPress.Core.Media;
@@ -203,4 +204,3 @@ public sealed class AudioJobViewModel : ObservableObject
     private static string FormatDuration(TimeSpan duration)
         => duration.TotalHours >= 1 ? duration.ToString(@"h\:mm\:ss") : duration.ToString(@"m\:ss");
 }
-

@@ -44,7 +44,11 @@ public partial class MainWindow : Window
 
         if (viewModel.IsProcessing)
         {
-            MessageBox.Show("队列仍在处理中，请先取消或等待结束。", "AudioPress", MessageBoxButton.OK, MessageBoxImage.Information);
+            System.Windows.MessageBox.Show(
+                "队列仍在处理中，请先取消或等待结束。",
+                "AudioPress",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
             e.Cancel = true;
             return;
         }

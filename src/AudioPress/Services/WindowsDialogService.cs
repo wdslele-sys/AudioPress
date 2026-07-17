@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.Win32;
 
 namespace AudioPress.Services;
@@ -8,7 +9,7 @@ public sealed class WindowsDialogService : IDialogService
 
     public IReadOnlyList<string> PickAudioFiles()
     {
-        var dialog = new OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "选择音频文件",
             Filter = AudioFilter,
@@ -32,4 +33,3 @@ public sealed class WindowsDialogService : IDialogService
         return dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK ? dialog.SelectedPath : null;
     }
 }
-

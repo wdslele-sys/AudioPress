@@ -464,7 +464,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
             var result = await _compressionService.CompressAsync(
                 request,
-                job.MediaInfo.Duration,
+                job.MediaInfo!.Duration,
                 progress,
                 jobCancellation.Token).ConfigureAwait(true);
 
@@ -588,4 +588,3 @@ public sealed class MainWindowViewModel : ObservableObject
         return normalized.Length <= 300 ? normalized : normalized[..300] + "...";
     }
 }
-

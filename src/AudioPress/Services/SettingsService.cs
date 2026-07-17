@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using AudioPress.Models;
 
@@ -40,4 +41,3 @@ public sealed class SettingsService
         await JsonSerializer.SerializeAsync(stream, settings, JsonOptions).ConfigureAwait(false);
     }
 }
-
