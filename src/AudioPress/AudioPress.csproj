@@ -8,10 +8,15 @@
     <AssemblyName>AudioPress</AssemblyName>
     <RootNamespace>AudioPress</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AudioPress.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AudioPress.Core\AudioPress.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\AudioPress.ico" />
   </ItemGroup>
 </Project>
 

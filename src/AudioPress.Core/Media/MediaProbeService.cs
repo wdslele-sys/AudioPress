@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using AudioPress.Core.Tools;
 
@@ -23,6 +24,8 @@ public sealed class MediaProbeService
             FileName = _tools.FfprobePath,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
             UseShellExecute = false,
             CreateNoWindow = true
         };
@@ -40,11 +43,12 @@ public sealed class MediaProbeService
         }
 
         using var process = Process.Start(psi) ?? throw new MediaProbeException("无法启动 ffprobe。");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        using var stdoutBuffer = new MemoryStream();
+        var stdoutTask = process.StandardOutput.BaseStream.CopyToAsync(stdoutBuffer, cancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
 
-        var stdout = await stdoutTask.ConfigureAwait(false);
+        await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
 
         if (process.ExitCode != 0)
@@ -52,10 +56,10 @@ public sealed class MediaProbeService
             throw new MediaProbeException(string.IsNullOrWhiteSpace(stderr) ? "ffprobe 无法识别该文件。" : stderr.Trim());
         }
 
-        return ParseProbeJson(stdout, inputPath);
+        return ParseProbeJson(stdoutBuffer.ToArray(), inputPath);
     }
 
-    private static MediaInfo ParseProbeJson(string json, string inputPath)
+    private static MediaInfo ParseProbeJson(ReadOnlyMemory<byte> json, string inputPath)
     {
         try
         {

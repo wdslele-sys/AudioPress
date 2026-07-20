@@ -10,13 +10,14 @@ public static class OutputPathResolver
         string? outputDirectory,
         bool useSourceCompressedFolder,
         AudioFormat format,
-        SameNamePolicy sameNamePolicy)
+        SameNamePolicy sameNamePolicy,
+        string sourceFolderName = "Compressed")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inputPath);
 
         var sourceDirectory = Path.GetDirectoryName(Path.GetFullPath(inputPath)) ?? Directory.GetCurrentDirectory();
         var targetDirectory = useSourceCompressedFolder || string.IsNullOrWhiteSpace(outputDirectory)
-            ? Path.Combine(sourceDirectory, "Compressed")
+            ? Path.Combine(sourceDirectory, sourceFolderName)
             : Path.GetFullPath(outputDirectory);
 
         var baseName = Path.GetFileNameWithoutExtension(inputPath);

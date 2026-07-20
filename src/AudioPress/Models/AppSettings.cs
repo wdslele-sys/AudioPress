@@ -5,6 +5,8 @@ namespace AudioPress.Models;
 
 public sealed class AppSettings
 {
+    public ProcessingMode ProcessingMode { get; set; } = ProcessingMode.Compress;
+
     public string SelectedPresetId { get; set; } = "music-balanced";
 
     public AudioFormat OutputFormat { get; set; } = AudioFormat.M4A;

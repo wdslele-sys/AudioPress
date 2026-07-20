@@ -22,10 +22,57 @@ public static class AudioFileScanner
         ".alac"
     };
 
+    private static readonly HashSet<string> SupportedVideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".wmv",
+        ".webm",
+        ".flv",
+        ".f4v",
+        ".m4v",
+        ".ts",
+        ".trp",
+        ".tp",
+        ".mts",
+        ".m2ts",
+        ".3gp",
+        ".3g2",
+        ".mpeg",
+        ".mpg",
+        ".vob",
+        ".ogv",
+        ".asf",
+        ".rm",
+        ".rmvb",
+        ".mxf",
+        ".dv",
+        ".divx",
+        ".mod",
+        ".tod",
+        ".dat",
+        ".nut",
+        ".y4m",
+        ".ivf",
+        ".264",
+        ".h264",
+        ".265",
+        ".h265",
+        ".hevc",
+        ".av1"
+    };
+
     public static bool IsLikelyAudioFile(string path)
         => File.Exists(path) && SupportedExtensions.Contains(Path.GetExtension(path));
 
-    public static IReadOnlyList<string> ScanFiles(IEnumerable<string> paths, bool recursive)
+    public static bool IsLikelyMediaFile(string path, bool includeVideo)
+        => File.Exists(path)
+           && (SupportedExtensions.Contains(Path.GetExtension(path))
+               || includeVideo && SupportedVideoExtensions.Contains(Path.GetExtension(path)));
+
+    public static IReadOnlyList<string> ScanFiles(IEnumerable<string> paths, bool recursive, bool includeVideo = false)
     {
         var files = new List<string>();
 
@@ -33,7 +80,7 @@ public static class AudioFileScanner
         {
             if (File.Exists(path))
             {
-                if (IsLikelyAudioFile(path))
+                if (IsLikelyMediaFile(path, includeVideo))
                 {
                     files.Add(Path.GetFullPath(path));
                 }
@@ -43,14 +90,14 @@ public static class AudioFileScanner
 
             if (Directory.Exists(path))
             {
-                files.AddRange(ScanDirectory(path, recursive));
+                files.AddRange(ScanDirectory(path, recursive, includeVideo));
             }
         }
 
         return files.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    private static IEnumerable<string> ScanDirectory(string directory, bool recursive)
+    private static IEnumerable<string> ScanDirectory(string directory, bool recursive, bool includeVideo)
     {
         var pending = new Stack<string>();
         pending.Push(directory);
@@ -71,7 +118,7 @@ public static class AudioFileScanner
 
             foreach (var candidate in files)
             {
-                if (IsLikelyAudioFile(candidate))
+                if (IsLikelyMediaFile(candidate, includeVideo))
                 {
                     yield return Path.GetFullPath(candidate);
                 }
