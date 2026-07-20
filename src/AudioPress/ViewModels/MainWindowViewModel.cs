@@ -20,6 +20,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly FfmpegCompressionService _compressionService;
     private readonly HashSet<string> _knownPaths = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _queueCancellation;
+    private TaskCompletionSource<bool>? _processingCompletion;
 
     private CompressionPreset _selectedPreset = PresetCatalog.Default;
     private FormatOption _selectedOutputFormat;
@@ -264,6 +265,21 @@ public sealed class MainWindowViewModel : ObservableObject
         await _settingsService.SaveAsync(settings).ConfigureAwait(false);
     }
 
+    public async Task CancelProcessingAsync()
+    {
+        if (!IsProcessing)
+        {
+            return;
+        }
+
+        var completion = _processingCompletion;
+        CancelAll();
+        if (completion is not null)
+        {
+            await completion.Task.ConfigureAwait(true);
+        }
+    }
+
     private async Task LoadSettingsAsync()
     {
         var settings = await _settingsService.LoadAsync().ConfigureAwait(true);
@@ -356,33 +372,69 @@ public sealed class MainWindowViewModel : ObservableObject
             return;
         }
 
-        await SaveSettingsAsync().ConfigureAwait(true);
-        _queueCancellation = new CancellationTokenSource();
+        var queueCancellation = new CancellationTokenSource();
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _queueCancellation = queueCancellation;
+        _processingCompletion = completion;
         IsProcessing = true;
-        StatusLine = "正在处理队列";
-        await LogAsync("开始批量处理。").ConfigureAwait(true);
 
         try
         {
+            await SaveSettingsAsync().ConfigureAwait(true);
+            StatusLine = "正在处理队列";
+            await LogAsync("开始批量处理。").ConfigureAwait(true);
+
             foreach (var job in Jobs.Where(job => job.CanProcess).ToList())
             {
-                if (_queueCancellation.IsCancellationRequested)
+                if (queueCancellation.IsCancellationRequested)
                 {
                     break;
                 }
 
-                await ProcessJobAsync(job, _queueCancellation.Token).ConfigureAwait(true);
+                await ProcessJobAsync(job, queueCancellation.Token).ConfigureAwait(true);
                 UpdateCounts();
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusLine = $"处理失败：{TrimMessage(ex.Message)}";
+            try
+            {
+                await LogAsync($"队列处理失败：{TrimMessage(ex.Message)}").ConfigureAwait(true);
+            }
+            catch
+            {
+                // A logging failure must not crash the UI.
             }
         }
         finally
         {
             IsProcessing = false;
-            _queueCancellation.Dispose();
-            _queueCancellation = null;
+            queueCancellation.Dispose();
+            if (ReferenceEquals(_queueCancellation, queueCancellation))
+            {
+                _queueCancellation = null;
+            }
+
             StatusLine = "队列处理结束";
-            await LogAsync("队列处理结束。").ConfigureAwait(true);
-            UpdateCounts();
+            try
+            {
+                await LogAsync("队列处理结束。").ConfigureAwait(true);
+            }
+            catch
+            {
+                // Logging failure must not leave the processing state stuck.
+            }
+            finally
+            {
+                UpdateCounts();
+                if (ReferenceEquals(_processingCompletion, completion))
+                {
+                    _processingCompletion = null;
+                }
+
+                completion.TrySetResult(true);
+            }
         }
     }
 

@@ -7,6 +7,9 @@ namespace AudioPress;
 
 public partial class MainWindow : Window
 {
+    private bool _closeInProgress;
+    private bool _allowClose;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -35,31 +38,59 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void Window_Closing(object? sender, CancelEventArgs e)
+    private async void Window_Closing(object? sender, CancelEventArgs e)
     {
+        if (_allowClose)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (_closeInProgress)
+        {
+            return;
+        }
+
         if (DataContext is not MainWindowViewModel viewModel)
         {
+            _allowClose = true;
+            Close();
             return;
         }
 
         if (viewModel.IsProcessing)
         {
-            System.Windows.MessageBox.Show(
-                "队列仍在处理中，请先取消或等待结束。",
+            var result = System.Windows.MessageBox.Show(
+                "队列仍在处理中。是否取消当前任务并退出？",
                 "AudioPress",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Information);
-            e.Cancel = true;
-            return;
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+            if (result != System.Windows.MessageBoxResult.Yes)
+            {
+                return;
+            }
         }
 
+        _closeInProgress = true;
         try
         {
-            viewModel.SaveSettingsAsync().GetAwaiter().GetResult();
+            if (viewModel.IsProcessing)
+            {
+                await viewModel.CancelProcessingAsync()
+                    .WaitAsync(TimeSpan.FromSeconds(10))
+                    .ConfigureAwait(true);
+            }
+
+            await viewModel.SaveSettingsAsync().ConfigureAwait(true);
         }
         catch
         {
-            // Closing should not fail because settings could not be saved.
+            // Closing must still complete if cancellation or settings persistence fails.
+        }
+        finally
+        {
+            _allowClose = true;
+            Close();
         }
     }
 }
