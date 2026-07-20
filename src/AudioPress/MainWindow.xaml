@@ -185,9 +185,9 @@
             <TextBlock DockPanel.Dock="Left" Text="{Binding StatusLine}" Foreground="{StaticResource MutedTextBrush}" />
             <TextBlock DockPanel.Dock="Right" Foreground="{StaticResource MutedTextBrush}">
                 <Run Text="已结束 " />
-                <Run Text="{Binding FinishedCount}" />
+                <Run Text="{Binding FinishedCount, Mode=OneWay}" />
                 <Run Text=" / " />
-                <Run Text="{Binding TotalCount}" />
+                <Run Text="{Binding TotalCount, Mode=OneWay}" />
             </TextBlock>
         </DockPanel>
     </Grid>
