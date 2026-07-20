@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.IO;
 using AudioPress.Commands;
 using AudioPress.Core.Compression;
 using AudioPress.Core.Media;
@@ -23,6 +24,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private TaskCompletionSource<bool>? _processingCompletion;
 
     private CompressionPreset _selectedPreset = PresetCatalog.Default;
+    private ProcessingModeOption _selectedProcessingMode;
     private FormatOption _selectedOutputFormat;
     private SameNamePolicyOption _selectedSameNamePolicy;
     private string? _outputDirectory;
@@ -50,6 +52,12 @@ public sealed class MainWindowViewModel : ObservableObject
         OutputFormats = Enum.GetValues<AudioFormat>()
             .Select(format => new FormatOption(format, format.GetDisplayName()))
             .ToList();
+        ProcessingModes =
+        [
+            new ProcessingModeOption(ProcessingMode.Compress, "批量压缩"),
+            new ProcessingModeOption(ProcessingMode.ExtractAudio, "提取音频")
+        ];
+        BitrateOptions = ["48", "64", "96", "128", "160", "192", "256", "320"];
         SameNamePolicies =
         [
             new SameNamePolicyOption(SameNamePolicy.AutoNumber, "自动编号"),
@@ -57,6 +65,7 @@ public sealed class MainWindowViewModel : ObservableObject
             new SameNamePolicyOption(SameNamePolicy.Overwrite, "覆盖")
         ];
 
+        _selectedProcessingMode = ProcessingModes[0];
         _selectedOutputFormat = OutputFormats.First(option => option.Format == _selectedPreset.Format);
         _selectedSameNamePolicy = SameNamePolicies[0];
         ApplyPresetDefaults(_selectedPreset);
@@ -78,6 +87,10 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public IReadOnlyList<CompressionPreset> Presets => PresetCatalog.All;
 
+    public IReadOnlyList<ProcessingModeOption> ProcessingModes { get; }
+
+    public IReadOnlyList<string> BitrateOptions { get; }
+
     public IReadOnlyList<FormatOption> OutputFormats { get; }
 
     public IReadOnlyList<SameNamePolicyOption> SameNamePolicies { get; }
@@ -97,6 +110,32 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand ClearCommand { get; }
 
     public AsyncRelayCommand RetryFailedCommand { get; }
+
+    public ProcessingModeOption SelectedProcessingMode
+    {
+        get => _selectedProcessingMode;
+        set
+        {
+            if (value is not null && SetProperty(ref _selectedProcessingMode, value))
+            {
+                OnPropertyChanged(nameof(IsExtractMode));
+                OnPropertyChanged(nameof(StartButtonText));
+                OnPropertyChanged(nameof(SettingsHeader));
+                OnPropertyChanged(nameof(SourceFolderLabel));
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
+            }
+        }
+    }
+
+    public bool IsExtractMode => SelectedProcessingMode.Mode == ProcessingMode.ExtractAudio;
+
+    public string StartButtonText => IsExtractMode ? "开始提取" : "开始压缩";
+
+    public string SettingsHeader => IsExtractMode ? "音频提取设置" : "压缩设置";
+
+    public string SourceFolderLabel => IsExtractMode
+        ? "源目录下的 ExtractedAudio 文件夹"
+        : "源目录下的 Compressed 文件夹";
 
     public CompressionPreset SelectedPreset
     {
@@ -119,9 +158,9 @@ public sealed class MainWindowViewModel : ObservableObject
         get => _selectedOutputFormat;
         set
         {
-            if (value is not null)
+            if (value is not null && SetProperty(ref _selectedOutputFormat, value))
             {
-                SetProperty(ref _selectedOutputFormat, value);
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
             }
         }
     }
@@ -191,19 +230,37 @@ public sealed class MainWindowViewModel : ObservableObject
     public string BitrateKbps
     {
         get => _bitrateKbps;
-        set => SetProperty(ref _bitrateKbps, value);
+        set
+        {
+            if (SetProperty(ref _bitrateKbps, value))
+            {
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
+            }
+        }
     }
 
     public string SampleRateHz
     {
         get => _sampleRateHz;
-        set => SetProperty(ref _sampleRateHz, value);
+        set
+        {
+            if (SetProperty(ref _sampleRateHz, value))
+            {
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
+            }
+        }
     }
 
     public string Channels
     {
         get => _channels;
-        set => SetProperty(ref _channels, value);
+        set
+        {
+            if (SetProperty(ref _channels, value))
+            {
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
+            }
+        }
     }
 
     public string VbrQuality
@@ -221,7 +278,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public string WavBitDepth
     {
         get => _wavBitDepth;
-        set => SetProperty(ref _wavBitDepth, value);
+        set
+        {
+            if (SetProperty(ref _wavBitDepth, value))
+            {
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
+            }
+        }
     }
 
     public string StatusLine
@@ -240,6 +303,20 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public int FinishedCount => Jobs.Count(job => job.State is JobState.Completed or JobState.Failed or JobState.Skipped or JobState.Canceled);
 
+    public string EstimatedOutputSizeText
+    {
+        get
+        {
+            var totalSeconds = Jobs.Select(job => job.MediaInfo?.Duration?.TotalSeconds ?? 0d).Sum();
+            var totalInputBytes = Jobs.Sum(job =>
+                job.MediaInfo?.FileSizeBytes
+                ?? (File.Exists(job.InputPath) ? new FileInfo(job.InputPath).Length : 0L));
+            return totalSeconds <= 0
+                ? "预计体积：添加并识别文件后显示"
+                : EstimateOutputSize(totalSeconds, totalInputBytes);
+        }
+    }
+
     public async Task AddDroppedPathsAsync(IEnumerable<string> paths)
         => await AddPathsAsync(paths, RecursiveFolderScan).ConfigureAwait(true);
 
@@ -247,6 +324,7 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         var settings = new AppSettings
         {
+            ProcessingMode = SelectedProcessingMode.Mode,
             SelectedPresetId = SelectedPreset.Id,
             OutputFormat = SelectedOutputFormat.Format,
             OutputDirectory = OutputDirectory,
@@ -283,6 +361,8 @@ public sealed class MainWindowViewModel : ObservableObject
     private async Task LoadSettingsAsync()
     {
         var settings = await _settingsService.LoadAsync().ConfigureAwait(true);
+        SelectedProcessingMode = ProcessingModes.FirstOrDefault(option => option.Mode == settings.ProcessingMode)
+            ?? ProcessingModes[0];
         SelectedPreset = PresetCatalog.FindOrDefault(settings.SelectedPresetId);
         SelectedOutputFormat = OutputFormats.FirstOrDefault(option => option.Format == settings.OutputFormat)
             ?? OutputFormats.First(option => option.Format == SelectedPreset.Format);
@@ -301,7 +381,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task AddFilesAsync()
     {
-        var files = _dialogService.PickAudioFiles();
+        var files = _dialogService.PickMediaFiles(IsExtractMode);
         await AddPathsAsync(files, recursive: false).ConfigureAwait(true);
     }
 
@@ -316,7 +396,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private async Task AddPathsAsync(IEnumerable<string> paths, bool recursive)
     {
-        var files = AudioFileScanner.ScanFiles(paths, recursive);
+        var files = AudioFileScanner.ScanFiles(paths, recursive, includeVideo: IsExtractMode);
         var added = 0;
 
         foreach (var file in files)
@@ -332,7 +412,7 @@ public sealed class MainWindowViewModel : ObservableObject
             _ = ProbeJobAsync(job);
         }
 
-        await LogAsync(added == 0 ? "没有新增音频文件。" : $"已添加 {added} 个音频文件。").ConfigureAwait(true);
+        await LogAsync(added == 0 ? "没有新增可处理的媒体文件。" : $"已添加 {added} 个媒体文件。").ConfigureAwait(true);
         UpdateCounts();
         RaiseCommandStates();
     }
@@ -361,6 +441,7 @@ public sealed class MainWindowViewModel : ObservableObject
         finally
         {
             UpdateCounts();
+            OnPropertyChanged(nameof(EstimatedOutputSizeText));
             RaiseCommandStates();
         }
     }
@@ -461,6 +542,7 @@ public sealed class MainWindowViewModel : ObservableObject
             {
                 var mediaInfo = await _probeService.ProbeAsync(job.InputPath, queueToken).ConfigureAwait(true);
                 job.ApplyMediaInfo(mediaInfo);
+                OnPropertyChanged(nameof(EstimatedOutputSizeText));
             }
             catch (Exception ex)
             {
@@ -476,7 +558,8 @@ public sealed class MainWindowViewModel : ObservableObject
             OutputDirectory,
             UseSourceCompressedFolder,
             preset.Format,
-            SelectedSameNamePolicy.Policy);
+            SelectedSameNamePolicy.Policy,
+            IsExtractMode ? "ExtractedAudio" : "Compressed");
 
         if (output.ShouldSkip || string.IsNullOrWhiteSpace(output.OutputPath))
         {
@@ -500,7 +583,7 @@ public sealed class MainWindowViewModel : ObservableObject
                 preset,
                 BuildOverrides(),
                 PreserveMetadata,
-                PreserveCoverArt);
+                PreserveCoverArt && !IsExtractMode);
 
             var progress = new Progress<CompressionProgress>(report =>
             {
@@ -605,6 +688,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private void JobsOnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         UpdateCounts();
+        OnPropertyChanged(nameof(EstimatedOutputSizeText));
         RaiseCommandStates();
     }
 
@@ -633,6 +717,57 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private static int? ParseNullableInt(string? text)
         => int.TryParse(text, out var value) ? value : null;
+
+    private string EstimateOutputSize(double totalSeconds, long totalInputBytes)
+    {
+        var format = SelectedOutputFormat.Format;
+        var sampleRate = ParseNullablePositiveInt(SampleRateHz) ?? SelectedPreset.SampleRateHz ?? 44_100;
+        var channels = ParseNullablePositiveInt(Channels) ?? SelectedPreset.Channels ?? 2;
+        var bitDepth = ParseNullablePositiveInt(WavBitDepth) ?? SelectedPreset.WavBitDepth ?? 16;
+
+        if (format == AudioFormat.Wav)
+        {
+            var bytes = totalSeconds * sampleRate * channels * bitDepth / 8d;
+            var detail = $"预计音频：约 {FileSizeFormatter.Format((long)bytes)}（WAV {sampleRate}Hz / {channels}声道 / {bitDepth}bit）";
+            return AppendSpaceSaving(detail, totalInputBytes, (long)bytes);
+        }
+
+        if (format == AudioFormat.Flac)
+        {
+            var pcmBytes = totalSeconds * sampleRate * channels * Math.Max(bitDepth, 16) / 8d;
+            var low = (long)(pcmBytes * 0.45d);
+            var high = (long)(pcmBytes * 0.70d);
+            var detail = $"预计音频：约 {FileSizeFormatter.Format(low)}–{FileSizeFormatter.Format(high)}（FLAC 无损，取决于音源）";
+            return AppendSpaceSaving(detail, totalInputBytes, (low + high) / 2);
+        }
+
+        var bitrate = ParseNullablePositiveInt(BitrateKbps)
+            ?? SelectedPreset.BitrateKbps
+            ?? format switch
+            {
+                AudioFormat.Opus => 96,
+                AudioFormat.M4A or AudioFormat.Aac => 128,
+                _ => 160
+            };
+        var encodedBytes = totalSeconds * bitrate * 1000d / 8d * 1.03d;
+        var encodedDetail = $"预计音频：约 {FileSizeFormatter.Format((long)encodedBytes)}（{SelectedOutputFormat.DisplayName} / {bitrate} kbps）";
+        return AppendSpaceSaving(encodedDetail, totalInputBytes, (long)encodedBytes);
+    }
+
+    private string AppendSpaceSaving(string outputEstimate, long totalInputBytes, long estimatedOutputBytes)
+    {
+        if (!IsExtractMode || totalInputBytes <= 0)
+        {
+            return outputEstimate;
+        }
+
+        var difference = totalInputBytes - estimatedOutputBytes;
+        var percentage = Math.Abs(difference) * 100d / totalInputBytes;
+        var source = FileSizeFormatter.Format(totalInputBytes);
+        return difference >= 0
+            ? $"{outputEstimate}；原视频 {source}，预计节省 {FileSizeFormatter.Format(difference)}（{percentage:0.#}%）"
+            : $"{outputEstimate}；原视频 {source}，预计增加 {FileSizeFormatter.Format(-difference)}（{percentage:0.#}%）";
+    }
 
     private static string TrimMessage(string message)
     {

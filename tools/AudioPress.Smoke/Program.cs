@@ -3,6 +3,27 @@ using AudioPress.Core.Media;
 using AudioPress.Core.Presets;
 using AudioPress.Core.Tools;
 
+if (args.Length >= 2 && (string.Equals(args[0], "--probe", StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(args[0], "--probe-many", StringComparison.OrdinalIgnoreCase)))
+{
+    var probeTools = FfmpegToolLocator.Resolve();
+    var fileProbe = new MediaProbeService(probeTools);
+    var files = string.Equals(args[0], "--probe-many", StringComparison.OrdinalIgnoreCase)
+        ? args.Skip(1)
+        : args.Take(2).Skip(1);
+    var results = await Task.WhenAll(files.Select(async file =>
+    {
+        var fullPath = Path.GetFullPath(file);
+        var info = await fileProbe.ProbeAsync(fullPath, CancellationToken.None);
+        return (fullPath, info);
+    }));
+    foreach (var probeResult in results)
+    {
+        Console.WriteLine($"{Path.GetFileName(probeResult.fullPath)}: {probeResult.info.Duration}, {probeResult.info.PrimaryCodec}, {probeResult.info.FileSizeBytes}");
+    }
+    return 0;
+}
+
 var workingDirectory = args.Length > 0
     ? Path.GetFullPath(args[0])
     : Path.Combine(Path.GetTempPath(), "AudioPress-Smoke-" + Guid.NewGuid().ToString("N"));
